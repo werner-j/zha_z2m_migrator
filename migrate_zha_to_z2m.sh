@@ -1225,12 +1225,10 @@ if os.path.exists(device_registry_path):
                         ieee = identifier[1]
                         name = device.get('name_by_user') or device.get('name')
                         if name:
-                            # Clean up name for Z2M (no spaces, lowercase with underscores)
-                            friendly_name = re.sub(r'[^a-zA-Z0-9_]', '_', name.lower())
-                            friendly_name = re.sub(r'_+', '_', friendly_name).strip('_')
+                            # Store original name - Z2M 2.x supports spaces and special chars
                             device_names[ieee.lower()] = {
                                 'original': name,
-                                'friendly': friendly_name
+                                'friendly': name  # Use original name directly
                             }
     except Exception as e:
         print(f"Warning: Could not read device registry: {e}", file=sys.stderr)
@@ -1254,12 +1252,16 @@ for device in devices:
         manufacturer = device.get('manufacturer', '')
         model = device.get('model', '')
         if manufacturer and model:
-            friendly_name = f"{manufacturer}_{model}".lower()
-            friendly_name = re.sub(r'[^a-zA-Z0-9_]', '_', friendly_name)
-            friendly_name = re.sub(r'_+', '_', friendly_name).strip('_')
+            friendly_name = f"{manufacturer} {model}"
         else:
             # Use IEEE address as fallback
             friendly_name = f"device_{ieee_clean}"
+    
+    # Quote the friendly name if it contains special characters
+    if any(c in friendly_name for c in ' :\'\"'):
+        friendly_name_yaml = f"'{friendly_name}'"
+    else:
+        friendly_name_yaml = friendly_name
     
     # Make names unique by appending part of IEEE if duplicate
     devices_yaml_lines.append(f"'{ieee_z2m}':")
@@ -1267,7 +1269,7 @@ for device in devices:
     if original_name:
         devices_yaml_lines.append(f"  # Original ZHA name: {original_name}")
     
-    devices_yaml_lines.append(f"  friendly_name: {friendly_name}")
+    devices_yaml_lines.append(f"  friendly_name: {friendly_name_yaml}")
     
     # Add some useful info as comments
     if device.get('manufacturer'):
