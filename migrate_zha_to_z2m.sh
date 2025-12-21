@@ -831,6 +831,9 @@ groups = data['groups']
 db_entries = []
 entry_id = 1
 
+# Track used names to ensure uniqueness
+used_names = {}
+
 # Add coordinator entry
 coordinator_ieee_z2m = ieee_zha_to_z2m(coordinator_ieee_zha)
 db_entries.append({
@@ -887,6 +890,18 @@ for device in devices:
         else:
             friendly_name = f"device_{ieee_clean}"
         debug(f"Device {ieee_z2m}: no HA name, using fallback '{friendly_name}'")
+    
+    # Strip trailing/leading whitespace
+    friendly_name = friendly_name.strip()
+    
+    # Ensure uniqueness by appending IEEE suffix if name already used
+    base_name = friendly_name
+    name_key = friendly_name.lower()
+    if name_key in used_names:
+        # Append last 4 chars of IEEE to make unique
+        friendly_name = f"{base_name} {ieee_clean[-4:]}"
+        name_key = friendly_name.lower()
+    used_names[name_key] = True
     
     # Convert endpoints to Z2M format
     endpoints = {}
@@ -1240,6 +1255,9 @@ devices_yaml_lines = ["# Zigbee2MQTT Device Configuration",
                        "# Migrated from ZHA", 
                        "#", ""]
 
+# Track used names to ensure uniqueness
+used_names = {}
+
 for device in devices:
     ieee_z2m = device['ieee_z2m']
     ieee_clean = ieee_z2m.replace('0x', '').lower()
@@ -1258,6 +1276,18 @@ for device in devices:
         else:
             # Use IEEE address as fallback
             friendly_name = f"device_{ieee_clean}"
+    
+    # Strip trailing/leading whitespace
+    friendly_name = friendly_name.strip()
+    
+    # Ensure uniqueness by appending IEEE suffix if name already used
+    base_name = friendly_name
+    name_key = friendly_name.lower()
+    if name_key in used_names:
+        # Append last 4 chars of IEEE to make unique
+        friendly_name = f"{base_name} {ieee_clean[-4:]}"
+        name_key = friendly_name.lower()
+    used_names[name_key] = True
     
     # Quote the friendly name if it contains special characters
     if any(c in friendly_name for c in ' :\'\"'):
