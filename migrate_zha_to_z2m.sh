@@ -780,8 +780,34 @@ def ieee_zha_to_z2m(ieee_str):
     clean = ieee_str.replace(':', '').lower()
     return f"0x{clean}"
 
+# Load area names from Home Assistant area registry
+area_names = {}
+area_registry_path = os.path.join(ha_config_dir, '.storage/core.area_registry')
+debug(f"Looking for area registry at: {area_registry_path}")
+
+if os.path.exists(area_registry_path):
+    debug("Area registry found, loading areas...")
+    try:
+        with open(area_registry_path, 'r') as f:
+            area_registry = json.load(f)
+        
+        areas_in_registry = area_registry.get('data', {}).get('areas', [])
+        debug(f"Found {len(areas_in_registry)} areas in registry")
+        
+        for area in areas_in_registry:
+            area_id = area.get('id')
+            area_name = area.get('name')
+            if area_id and area_name:
+                area_names[area_id] = area_name
+                debug(f"  Area mapping: {area_id} -> {area_name}")
+    except Exception as e:
+        debug(f"Error reading area registry: {e}")
+else:
+    debug(f"Area registry NOT FOUND at {area_registry_path}")
+
 # Load device names from Home Assistant device registry
 device_names = {}
+device_areas = {}
 device_registry_path = os.path.join(ha_config_dir, '.storage/core.device_registry')
 debug(f"Looking for device registry at: {device_registry_path}")
 
@@ -800,11 +826,16 @@ if os.path.exists(device_registry_path):
                     if identifier[0] == 'zha':
                         ieee = identifier[1].replace(':', '').lower()
                         name = device.get('name_by_user') or device.get('name')
+                        area_id = device.get('area_id')
                         if name:
                             device_names[ieee] = name
                             debug(f"  Name mapping: {ieee} -> {name}")
+                        if area_id and area_id in area_names:
+                            device_areas[ieee] = area_names[area_id]
+                            debug(f"  Area mapping: {ieee} -> {area_names[area_id]}")
         
         debug(f"Loaded {len(device_names)} device names from registry")
+        debug(f"Loaded {len(device_areas)} device areas from registry")
     except Exception as e:
         debug(f"Error reading device registry: {e}")
 else:
@@ -877,8 +908,18 @@ for device in devices:
     ieee_z2m = device['ieee_z2m']
     ieee_clean = ieee_z2m.replace('0x', '').lower()
     
-    # Look up friendly name from HA device registry
-    friendly_name = device_names.get(ieee_clean)
+    # Look up friendly name and room from HA device registry
+    device_name = device_names.get(ieee_clean)
+    device_room = device_areas.get(ieee_clean, '')
+    
+    # Build friendly name with room prefix if available
+    if device_name and device_room:
+        friendly_name = f"{device_room} - {device_name}"
+    elif device_name:
+        friendly_name = device_name
+    else:
+        friendly_name = None
+    
     if friendly_name:
         debug(f"Device {ieee_z2m}: using HA name '{friendly_name}'")
     else:
@@ -1221,8 +1262,24 @@ with open(os.path.join(output_dir, 'extracted_devices.json'), 'r') as f:
 devices = data['devices']
 groups = data['groups']
 
+# Load area names from Home Assistant area registry
+area_names = {}
+area_registry_path = os.path.join(ha_config_dir, '.storage/core.area_registry')
+if os.path.exists(area_registry_path):
+    try:
+        with open(area_registry_path, 'r') as f:
+            area_registry = json.load(f)
+        for area in area_registry.get('data', {}).get('areas', []):
+            area_id = area.get('id')
+            area_name = area.get('name')
+            if area_id and area_name:
+                area_names[area_id] = area_name
+    except Exception as e:
+        print(f"Warning: Could not read area registry: {e}", file=sys.stderr)
+
 # Try to get friendly names from Home Assistant device registry
 device_names = {}
+device_areas = {}
 entity_names = {}
 
 device_registry_path = os.path.join(ha_config_dir, '.storage/core.device_registry')
@@ -1241,12 +1298,15 @@ if os.path.exists(device_registry_path):
                         # Normalize: remove colons and lowercase
                         ieee_normalized = ieee.replace(':', '').lower()
                         name = device.get('name_by_user') or device.get('name')
+                        area_id = device.get('area_id')
                         if name:
                             # Store original name - Z2M 2.x supports spaces and special chars
                             device_names[ieee_normalized] = {
                                 'original': name,
                                 'friendly': name  # Use original name directly
                             }
+                        if area_id and area_id in area_names:
+                            device_areas[ieee_normalized] = area_names[area_id]
     except Exception as e:
         print(f"Warning: Could not read device registry: {e}", file=sys.stderr)
 
@@ -1262,10 +1322,18 @@ for device in devices:
     ieee_z2m = device['ieee_z2m']
     ieee_clean = ieee_z2m.replace('0x', '').lower()
     
-    # Get friendly name
+    # Get friendly name and room
     name_info = device_names.get(ieee_clean, {})
     original_name = name_info.get('original', '')
-    friendly_name = name_info.get('friendly', '')
+    device_room = device_areas.get(ieee_clean, '')
+    
+    # Build friendly name with room prefix if available
+    if original_name and device_room:
+        friendly_name = f"{device_room} - {original_name}"
+    elif original_name:
+        friendly_name = original_name
+    else:
+        friendly_name = ''
     
     if not friendly_name:
         # Generate a name from manufacturer and model
@@ -1442,8 +1510,24 @@ if os.path.exists(extracted_path):
         devices = data.get('devices', [])
         groups = data.get('groups', [])
 
-# Load device names from devices.yaml parsing or HA registry
+# Load area names from Home Assistant area registry
+area_names = {}
+area_registry_path = os.path.join(ha_config_dir, '.storage/core.area_registry')
+if os.path.exists(area_registry_path):
+    try:
+        with open(area_registry_path, 'r') as f:
+            area_registry = json.load(f)
+        for area in area_registry.get('data', {}).get('areas', []):
+            area_id = area.get('id')
+            area_name = area.get('name')
+            if area_id and area_name:
+                area_names[area_id] = area_name
+    except:
+        pass
+
+# Load device names and areas from devices.yaml parsing or HA registry
 device_names = {}
+device_areas = {}
 device_registry_path = os.path.join(ha_config_dir, '.storage/core.device_registry')
 if os.path.exists(device_registry_path):
     try:
@@ -1455,8 +1539,11 @@ if os.path.exists(device_registry_path):
                     if identifier[0] == 'zha':
                         ieee = identifier[1].replace(':', '').lower()
                         name = device.get('name_by_user') or device.get('name')
+                        area_id = device.get('area_id')
                         if name:
                             device_names[ieee] = name
+                        if area_id and area_id in area_names:
+                            device_areas[ieee] = area_names[area_id]
     except:
         pass
 
@@ -1508,10 +1595,17 @@ if devices:
         ieee_short = device.get('ieee_z2m', '').replace('0x', '')[:16]
         dev_type = device.get('type', 'Unknown')[:10]
         
-        # Get name from HA registry or fallback
+        # Get name and room from HA registry or fallback
         ieee_clean = device.get('ieee_z2m', '').replace('0x', '').lower()
-        name = device_names.get(ieee_clean, '')
-        if not name:
+        device_name = device_names.get(ieee_clean, '')
+        device_room = device_areas.get(ieee_clean, '')
+        
+        # Build display name with room prefix
+        if device_name and device_room:
+            name = f"{device_room} - {device_name}"
+        elif device_name:
+            name = device_name
+        else:
             name = device.get('manufacturer', '') or 'Unknown'
         name = name[:23]  # Truncate for display
         
