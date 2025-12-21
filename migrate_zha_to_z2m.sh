@@ -1221,12 +1221,14 @@ if os.path.exists(device_registry_path):
             for identifier in device.get('identifiers', []):
                 if isinstance(identifier, list) and len(identifier) >= 2:
                     if identifier[0] == 'zha':
-                        # identifier[1] is the IEEE address
+                        # identifier[1] is the IEEE address (may have colons)
                         ieee = identifier[1]
+                        # Normalize: remove colons and lowercase
+                        ieee_normalized = ieee.replace(':', '').lower()
                         name = device.get('name_by_user') or device.get('name')
                         if name:
                             # Store original name - Z2M 2.x supports spaces and special chars
-                            device_names[ieee.lower()] = {
+                            device_names[ieee_normalized] = {
                                 'original': name,
                                 'friendly': name  # Use original name directly
                             }
