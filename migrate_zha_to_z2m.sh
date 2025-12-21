@@ -757,14 +757,21 @@ create_z2m_database() {
     fi
     
     # Read extracted devices and generate database.db (NDJSON format)
-    python3 << 'PYTHON_SCRIPT' - "$Z2M_OUTPUT_DIR" "$COORDINATOR_IEEE" "$TX_COUNTER"
+    python3 << 'PYTHON_SCRIPT' - "$Z2M_OUTPUT_DIR" "$COORDINATOR_IEEE" "$TX_COUNTER" "$HA_CONFIG_DIR" "$VERBOSE"
 import json
 import sys
 import os
+import re
 
 output_dir = sys.argv[1]
 coordinator_ieee_zha = sys.argv[2]
 tx_counter = int(sys.argv[3]) if sys.argv[3] else 0
+ha_config_dir = sys.argv[4]
+verbose = sys.argv[5].lower() == 'true'
+
+def debug(msg):
+    if verbose:
+        print(f"[DEBUG] {msg}", file=sys.stderr)
 
 def ieee_zha_to_z2m(ieee_str):
     """Convert ZHA IEEE format to Z2M format"""
@@ -772,6 +779,46 @@ def ieee_zha_to_z2m(ieee_str):
         return None
     clean = ieee_str.replace(':', '').lower()
     return f"0x{clean}"
+
+# Load device names from Home Assistant device registry
+device_names = {}
+device_registry_path = os.path.join(ha_config_dir, '.storage/core.device_registry')
+debug(f"Looking for device registry at: {device_registry_path}")
+
+if os.path.exists(device_registry_path):
+    debug("Device registry found, loading names...")
+    try:
+        with open(device_registry_path, 'r') as f:
+            registry = json.load(f)
+        
+        devices_in_registry = registry.get('data', {}).get('devices', [])
+        debug(f"Found {len(devices_in_registry)} devices in registry")
+        
+        for device in devices_in_registry:
+            for identifier in device.get('identifiers', []):
+                if isinstance(identifier, list) and len(identifier) >= 2:
+                    if identifier[0] == 'zha':
+                        ieee = identifier[1].replace(':', '').lower()
+                        name = device.get('name_by_user') or device.get('name')
+                        if name:
+                            device_names[ieee] = name
+                            debug(f"  Name mapping: {ieee} -> {name}")
+        
+        debug(f"Loaded {len(device_names)} device names from registry")
+    except Exception as e:
+        debug(f"Error reading device registry: {e}")
+else:
+    debug(f"Device registry NOT FOUND at {device_registry_path}")
+    # List what's in the config directory
+    debug(f"Contents of {ha_config_dir}:")
+    if os.path.exists(ha_config_dir):
+        for item in os.listdir(ha_config_dir)[:20]:
+            debug(f"  - {item}")
+    storage_path = os.path.join(ha_config_dir, '.storage')
+    if os.path.exists(storage_path):
+        debug(f"Contents of {storage_path}:")
+        for item in os.listdir(storage_path)[:20]:
+            debug(f"  - {item}")
 
 # Read extracted devices
 with open(os.path.join(output_dir, 'extracted_devices.json'), 'r') as f:
@@ -825,6 +872,21 @@ entry_id += 1
 # Add device entries
 for device in devices:
     ieee_z2m = device['ieee_z2m']
+    ieee_clean = ieee_z2m.replace('0x', '').lower()
+    
+    # Look up friendly name from HA device registry
+    friendly_name = device_names.get(ieee_clean)
+    if friendly_name:
+        debug(f"Device {ieee_z2m}: using HA name '{friendly_name}'")
+    else:
+        # Fallback to manufacturer_model or IEEE
+        manufacturer = device.get('manufacturer', '')
+        model = device.get('model', '')
+        if manufacturer and model:
+            friendly_name = f"{manufacturer} {model}"
+        else:
+            friendly_name = f"device_{ieee_clean}"
+        debug(f"Device {ieee_z2m}: no HA name, using fallback '{friendly_name}'")
     
     # Convert endpoints to Z2M format
     endpoints = {}
@@ -866,7 +928,7 @@ for device in devices:
         "interviewState": "SUCCESSFUL",
         "meta": {},
         "lastSeen": device.get('last_seen'),
-        "friendlyName": device.get('name', ieee_z2m)
+        "friendlyName": friendly_name
     }
     
     db_entries.append(db_entry)
@@ -890,6 +952,14 @@ with open(os.path.join(output_dir, 'database.db'), 'w') as f:
         f.write(json.dumps(entry, separators=(',', ':')) + '\n')
 
 print(f"Created database.db with {len(db_entries)} entries")
+
+# Debug: Show sample entries
+if verbose:
+    debug("=== Sample database.db entries ===")
+    for i, entry in enumerate(db_entries[:5]):
+        debug(f"Entry {i+1}: ieeeAddr={entry.get('ieeeAddr')}, friendlyName={entry.get('friendlyName')}")
+    if len(db_entries) > 5:
+        debug(f"... and {len(db_entries) - 5} more entries")
 PYTHON_SCRIPT
 
     log_info "Created database.db"
