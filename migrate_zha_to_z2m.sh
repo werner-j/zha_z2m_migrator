@@ -865,7 +865,8 @@ for device in devices:
         "interviewCompleted": True,
         "interviewState": "SUCCESSFUL",
         "meta": {},
-        "lastSeen": device.get('last_seen')
+        "lastSeen": device.get('last_seen'),
+        "friendlyName": device.get('name', ieee_z2m)
     }
     
     db_entries.append(db_entry)
