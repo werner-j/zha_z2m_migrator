@@ -1,0 +1,29 @@
+# Output files
+zigbee2mqtt/
+output/
+
+# Test files
+*.test.db
+test_*.json
+
+# macOS
+.DS_Store
+
+# Editor files
+*.swp
+*.swo
+*~
+
+# IDE
+.idea/
+.vscode/
+*.code-workspace
+
+# Logs
+*.log
+
+# Sensitive data (if accidentally created during testing)
+secret.yaml
+coordinator_backup.json
+database.db
+*.enc
