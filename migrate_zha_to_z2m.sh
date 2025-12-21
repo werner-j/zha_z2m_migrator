@@ -974,22 +974,25 @@ for key_entry in key_table:
 # Determine children from ZHA backup
 children = [ieee_zha_to_backup(c) for c in network_info.get('children', [])]
 
+# IMPORTANT: Only include devices that have link keys in the coordinator backup!
+# zigbee-herdsman's EmberAdapter will fail if devices array contains entries without link_key
+# because it tries to access device.linkKey.key for all devices in the array.
+# Devices without individual link keys use the network-wide trust center link key.
+
 for ieee_zha, nwk in nwk_addresses.items():
     ieee = ieee_zha_to_backup(ieee_zha)
     if ieee == coordinator_ieee:
         continue  # Skip coordinator
     
-    device_entry = {
-        "nwk_address": nwk.lower() if isinstance(nwk, str) else format(nwk, '04x'),
-        "ieee_address": ieee,
-        "is_child": ieee in children
-    }
-    
-    # Add link key if available
+    # Only add device if it has an individual link key
     if ieee in link_key_map:
-        device_entry["link_key"] = link_key_map[ieee]
-    
-    devices.append(device_entry)
+        device_entry = {
+            "nwk_address": nwk.lower() if isinstance(nwk, str) else format(nwk, '04x'),
+            "ieee_address": ieee,
+            "is_child": ieee in children,
+            "link_key": link_key_map[ieee]
+        }
+        devices.append(device_entry)
 
 # Determine stack-specific info based on adapter type
 # This is critical for EmberZNet/EZSP adapters!
@@ -1094,7 +1097,10 @@ backup = {
 with open(os.path.join(output_dir, 'coordinator_backup.json'), 'w') as f:
     json.dump(backup, f, indent=2)
 
-print(f"Created coordinator_backup.json with {len(devices)} devices")
+# Note: devices array only contains devices with individual link keys
+# Most devices use the network-wide TC link key and are NOT in this array
+# This is normal and expected - they will rejoin using the TC link key
+print(f"Created coordinator_backup.json with {len(devices)} link key entries")
 PYTHON_SCRIPT
 
     log_info "Created coordinator_backup.json"
